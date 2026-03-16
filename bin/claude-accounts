@@ -1,10 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
-VERSION="1.1.0"
+VERSION="1.1.1"
 CONFIG_FILE="${CLAUDE_ACCOUNTS_CONFIG:-$HOME/.claude-accounts.conf}"
 CONFIG_DIR_PREFIX="$HOME/.claude-"
 WRAPPER_DIR="$HOME/.local/bin"
+CURRENT_ACCOUNT_FILE="$HOME/.claude-current-account"
 
 # Colors (disabled if not a terminal)
 if [[ -t 1 ]]; then
@@ -102,6 +103,58 @@ remove_wrapper() {
     fi
 }
 
+# Get current account name
+get_current_account() {
+    if [[ -f "$CURRENT_ACCOUNT_FILE" ]]; then
+        cat "$CURRENT_ACCOUNT_FILE" 2>/dev/null || true
+    fi
+}
+
+# Create/update the main claude wrapper
+create_claude_wrapper() {
+    local wrapper_path="${WRAPPER_DIR}/claude"
+
+    mkdir -p "$WRAPPER_DIR"
+
+    cat > "$wrapper_path" << 'WRAPPER_EOF'
+#!/bin/bash
+# Claude wrapper - managed by claude-accounts
+# This wrapper allows switching accounts with: claude-accounts use <name>
+
+CURRENT_ACCOUNT_FILE="$HOME/.claude-current-account"
+CONFIG_DIR_PREFIX="$HOME/.claude-"
+WRAPPER_DIR="$HOME/.local/bin"
+
+# Find the real claude binary (skip our wrapper)
+find_real_claude() {
+    local IFS=':'
+    for dir in $PATH; do
+        # Skip our wrapper directory
+        [[ "$dir" == "$WRAPPER_DIR" ]] && continue
+        if [[ -x "$dir/claude" ]]; then
+            echo "$dir/claude"
+            return 0
+        fi
+    done
+    echo "claude"  # fallback
+}
+
+# Check for current account
+if [[ -f "$CURRENT_ACCOUNT_FILE" ]]; then
+    account=$(cat "$CURRENT_ACCOUNT_FILE" 2>/dev/null)
+    if [[ -n "$account" ]]; then
+        export CLAUDE_CONFIG_DIR="${CONFIG_DIR_PREFIX}${account}"
+    fi
+fi
+
+# Find and exec real claude
+real_claude=$(find_real_claude)
+exec "$real_claude" "$@"
+WRAPPER_EOF
+
+    chmod +x "$wrapper_path"
+}
+
 # Show banner
 show_banner() {
     echo ""
@@ -121,7 +174,7 @@ usage() {
     echo "    list                List all configured accounts"
     echo "    add <name>          Create a new account configuration"
     echo "    remove <name>       Remove an account (with confirmation)"
-    echo "    use <name>          Launch Claude with the specified account"
+    echo "    use <name>          Switch to an account"
     echo "    shell-init          Print shell aliases (alternative to wrapper scripts)"
     echo "    version             Show version information"
     echo "    help                Show this help message"
@@ -129,6 +182,8 @@ usage() {
     echo -e "${BOLD}QUICK START:${NC}"
     echo "    claude-accounts add work       # Creates 'work' account"
     echo "    claude-work                    # Launch Claude with 'work' account"
+    echo "    claude-accounts use work       # Switch default account"
+    echo "    claude                         # Uses current account"
     echo ""
     echo -e "${BOLD}EXAMPLES:${NC}"
     echo "    claude-accounts add work"
@@ -145,6 +200,8 @@ usage() {
 list_accounts() {
     local accounts
     accounts=$(get_accounts)
+    local current
+    current=$(get_current_account)
 
     if [[ -z "$accounts" ]]; then
         echo -e "${YELLOW}No accounts configured.${NC}"
@@ -160,6 +217,14 @@ list_accounts() {
     while IFS= read -r name; do
         local dir="${CONFIG_DIR_PREFIX}${name}"
         local status
+        local marker=""
+
+        # Mark current account
+        if [[ "$name" == "$current" ]]; then
+            marker="${GREEN}*${NC} "
+        else
+            marker="  "
+        fi
 
         if [[ -d "$dir" ]]; then
             # Check if authenticated by looking for credentials
@@ -172,11 +237,15 @@ list_accounts() {
             status="${RED}directory missing${NC}"
         fi
 
-        printf "  ${BLUE}%-20s${NC} %-30s (%b)\n" "$name" "$dir" "$status"
+        printf "${marker}${BLUE}%-20s${NC} %-30s (%b)\n" "$name" "$dir" "$status"
     done <<< "$accounts"
 
     echo ""
-    echo -e "Use ${BOLD}claude-<name>${NC} or ${BOLD}claude-accounts use <name>${NC} to launch."
+    if [[ -n "$current" ]]; then
+        echo -e "${GREEN}*${NC} = current account"
+        echo ""
+    fi
+    echo -e "Switch with ${BOLD}claude-accounts use <name>${NC}"
 }
 
 # Add a new account
@@ -285,7 +354,7 @@ remove_account() {
     echo -e "${GREEN}Account '$name' removed successfully!${NC}"
 }
 
-# Use/launch an account
+# Switch to an account
 use_account() {
     local name="${1:-}"
 
@@ -308,9 +377,14 @@ use_account() {
         mkdir -p "$dir"
     fi
 
-    echo -e "Launching Claude with account ${BLUE}$name${NC}..."
-    export CLAUDE_CONFIG_DIR="$dir"
-    exec claude "$@"
+    # Ensure claude wrapper exists
+    create_claude_wrapper
+
+    # Save current account
+    echo "$name" > "$CURRENT_ACCOUNT_FILE"
+
+    echo -e "${GREEN}Switched to${NC} ${BLUE}$name${NC}"
+    echo -e "Now using: $dir"
 }
 
 # Print shell initialization (aliases)
