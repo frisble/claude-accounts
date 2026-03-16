@@ -7,14 +7,20 @@ Manage multiple Claude Code account configurations easily. Switch between work a
 ### Homebrew (recommended)
 
 ```bash
-brew tap YOUR_USERNAME/claude-accounts
+brew install frisble/tap/claude-accounts
+```
+
+Or:
+
+```bash
+brew tap frisble/tap
 brew install claude-accounts
 ```
 
 ### Manual
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/claude-accounts.git
+git clone https://github.com/frisble/claude-accounts.git
 cd claude-accounts
 chmod +x bin/claude-accounts
 sudo ln -s "$(pwd)/bin/claude-accounts" /usr/local/bin/claude-accounts

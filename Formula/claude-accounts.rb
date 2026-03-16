@@ -3,11 +3,11 @@
 
 class ClaudeAccounts < Formula
   desc "Manage multiple Claude Code account configurations"
-  homepage "https://github.com/YOUR_USERNAME/claude-accounts"
-  url "https://github.com/YOUR_USERNAME/claude-accounts/archive/refs/tags/v1.0.0.tar.gz"
-  sha256 "PLACEHOLDER_SHA256"
+  homepage "https://github.com/frisble/claude-accounts"
+  url "https://github.com/frisble/claude-accounts/archive/refs/tags/v1.0.0.tar.gz"
+  sha256 "REPLACE_WITH_SHA256"
   license "MIT"
-  head "https://github.com/YOUR_USERNAME/claude-accounts.git", branch: "main"
+  head "https://github.com/frisble/claude-accounts.git", branch: "main"
 
   def install
     bin.install "bin/claude-accounts"
