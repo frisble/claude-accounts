@@ -4,6 +4,7 @@ set -euo pipefail
 VERSION="1.0.0"
 CONFIG_FILE="${CLAUDE_ACCOUNTS_CONFIG:-$HOME/.claude-accounts.conf}"
 CONFIG_DIR_PREFIX="$HOME/.claude-"
+WRAPPER_DIR="$HOME/.local/bin"
 
 # Colors (disabled if not a terminal)
 if [[ -t 1 ]]; then
@@ -55,10 +56,59 @@ validate_name() {
     fi
 }
 
+# Check if ~/.local/bin is in PATH
+check_path() {
+    if [[ ":$PATH:" != *":$WRAPPER_DIR:"* ]]; then
+        return 1
+    fi
+    return 0
+}
+
+# Create wrapper script for an account
+create_wrapper() {
+    local name="$1"
+    local dir="${CONFIG_DIR_PREFIX}${name}"
+    local wrapper_path="${WRAPPER_DIR}/claude-${name}"
+
+    # Ensure wrapper directory exists
+    mkdir -p "$WRAPPER_DIR"
+
+    # Create the wrapper script
+    cat > "$wrapper_path" << EOF
+#!/bin/bash
+export CLAUDE_CONFIG_DIR="$dir"
+exec claude "\$@"
+EOF
+
+    chmod +x "$wrapper_path"
+}
+
+# Remove wrapper script for an account
+remove_wrapper() {
+    local name="$1"
+    local wrapper_path="${WRAPPER_DIR}/claude-${name}"
+
+    if [[ -f "$wrapper_path" ]]; then
+        rm -f "$wrapper_path"
+    fi
+}
+
+# Show banner
+show_banner() {
+    echo -e "${BLUE}"
+    echo "   ╔═══════════════════════════════════════════╗"
+    echo "   ║                                           ║"
+    echo "   ║   ◈  claude-accounts  ◈                   ║"
+    echo "   ║                                           ║"
+    echo "   ║   Manage multiple Claude Code configs     ║"
+    echo "   ║                                           ║"
+    echo "   ╚═══════════════════════════════════════════╝"
+    echo -e "${NC}"
+}
+
 # Show usage
 usage() {
-    echo -e "${BOLD}claude-accounts${NC} - Manage multiple Claude Code configurations"
-    echo ""
+    show_banner
     echo -e "${BOLD}USAGE:${NC}"
     echo "    claude-accounts <command> [arguments]"
     echo ""
@@ -67,23 +117,20 @@ usage() {
     echo "    add <name>          Create a new account configuration"
     echo "    remove <name>       Remove an account (with confirmation)"
     echo "    use <name>          Launch Claude with the specified account"
-    echo "    shell-init          Print shell aliases (add to your .zshrc/.bashrc)"
+    echo "    shell-init          Print shell aliases (alternative to wrapper scripts)"
     echo "    version             Show version information"
     echo "    help                Show this help message"
+    echo ""
+    echo -e "${BOLD}QUICK START:${NC}"
+    echo "    claude-accounts add work       # Creates 'work' account"
+    echo "    claude-work                    # Launch Claude with 'work' account"
     echo ""
     echo -e "${BOLD}EXAMPLES:${NC}"
     echo "    claude-accounts add work"
     echo "    claude-accounts add personal"
     echo "    claude-accounts list"
-    echo "    claude-accounts use work"
-    echo "    claude-accounts remove personal"
-    echo ""
-    echo -e "${BOLD}SETUP:${NC}"
-    echo "    Add this line to your ~/.zshrc or ~/.bashrc:"
-    echo '        eval "$(claude-accounts shell-init)"'
-    echo ""
-    echo "    Then reload your shell:"
-    echo "        source ~/.zshrc"
+    echo "    claude-work"
+    echo "    claude-personal"
     echo ""
     echo -e "${BOLD}VERSION:${NC}"
     echo "    $VERSION"
@@ -124,7 +171,7 @@ list_accounts() {
     done <<< "$accounts"
 
     echo ""
-    echo -e "Use ${BOLD}<name>${NC} or ${BOLD}claude-accounts use <name>${NC} to launch."
+    echo -e "Use ${BOLD}claude-<name>${NC} or ${BOLD}claude-accounts use <name>${NC} to launch."
 }
 
 # Add a new account
@@ -162,16 +209,22 @@ add_account() {
     touch_config
     echo "$name" >> "$CONFIG_FILE"
 
+    # Create wrapper script
+    create_wrapper "$name"
+    echo -e "${GREEN}Created${NC} ${WRAPPER_DIR}/claude-${name}"
+
     echo -e "${GREEN}Account '$name' added successfully!${NC}"
     echo ""
 
-    # Print the alias so user can copy-paste or eval immediately
-    local alias_cmd="alias $name=\"CLAUDE_CONFIG_DIR='$dir' claude\""
-    echo "Run this to enable the alias now:"
-    echo "    $alias_cmd"
-    echo ""
-    echo "Then launch Claude:"
-    echo "    $name"
+    # Check if ~/.local/bin is in PATH
+    if ! check_path; then
+        echo -e "${YELLOW}Note:${NC} Add ~/.local/bin to your PATH (one-time setup):"
+        echo "    echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.zshrc && source ~/.zshrc"
+        echo ""
+    fi
+
+    echo "Launch Claude with this account:"
+    echo "    claude-${name}"
 }
 
 # Remove an account
@@ -196,6 +249,10 @@ remove_account() {
     if [[ -d "$dir" ]]; then
         echo "  Directory: $dir (will be deleted)"
     fi
+    local wrapper_path="${WRAPPER_DIR}/claude-${name}"
+    if [[ -f "$wrapper_path" ]]; then
+        echo "  Command: $wrapper_path (will be deleted)"
+    fi
     echo ""
     read -rp "Are you sure? [y/N] " confirm
 
@@ -210,6 +267,10 @@ remove_account() {
         echo -e "${GREEN}Removed${NC} $dir"
     fi
 
+    # Remove wrapper script
+    remove_wrapper "$name"
+    echo -e "${GREEN}Removed${NC} ${WRAPPER_DIR}/claude-${name}"
+
     # Remove from config (create temp file without the account)
     local tmp_file
     tmp_file=$(mktemp)
@@ -217,9 +278,6 @@ remove_account() {
     mv "$tmp_file" "$CONFIG_FILE"
 
     echo -e "${GREEN}Account '$name' removed successfully!${NC}"
-    echo ""
-    echo "Reload your shell to remove the alias:"
-    echo "    source ~/.zshrc"
 }
 
 # Use/launch an account
