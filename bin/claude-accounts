@@ -1,0 +1,309 @@
+#!/bin/bash
+set -euo pipefail
+
+VERSION="1.0.0"
+CONFIG_FILE="${CLAUDE_ACCOUNTS_CONFIG:-$HOME/.claude-accounts.conf}"
+CONFIG_DIR_PREFIX="$HOME/.claude-"
+
+# Colors (disabled if not a terminal)
+if [[ -t 1 ]]; then
+    RED='\033[0;31m'
+    GREEN='\033[0;32m'
+    YELLOW='\033[0;33m'
+    BLUE='\033[0;34m'
+    BOLD='\033[1m'
+    NC='\033[0m'
+else
+    RED=''
+    GREEN=''
+    YELLOW=''
+    BLUE=''
+    BOLD=''
+    NC=''
+fi
+
+# Ensure config file exists
+touch_config() {
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        touch "$CONFIG_FILE"
+    fi
+}
+
+# Get all registered accounts
+get_accounts() {
+    touch_config
+    cat "$CONFIG_FILE" 2>/dev/null | grep -v '^$' | sort -u || true
+}
+
+# Check if account exists in config
+account_exists() {
+    local name="$1"
+    get_accounts | grep -qx "$name"
+}
+
+# Validate account name
+validate_name() {
+    local name="$1"
+    if [[ ! "$name" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+        echo -e "${RED}Error:${NC} Invalid account name '$name'"
+        echo "Names must be lowercase, start with a letter/number, and contain only letters, numbers, and hyphens."
+        exit 1
+    fi
+    if [[ ${#name} -gt 50 ]]; then
+        echo -e "${RED}Error:${NC} Account name too long (max 50 characters)"
+        exit 1
+    fi
+}
+
+# Show usage
+usage() {
+    echo -e "${BOLD}claude-accounts${NC} - Manage multiple Claude Code configurations"
+    echo ""
+    echo -e "${BOLD}USAGE:${NC}"
+    echo "    claude-accounts <command> [arguments]"
+    echo ""
+    echo -e "${BOLD}COMMANDS:${NC}"
+    echo "    list                List all configured accounts"
+    echo "    add <name>          Create a new account configuration"
+    echo "    remove <name>       Remove an account (with confirmation)"
+    echo "    use <name>          Launch Claude with the specified account"
+    echo "    shell-init          Print shell aliases (add to your .zshrc/.bashrc)"
+    echo "    version             Show version information"
+    echo "    help                Show this help message"
+    echo ""
+    echo -e "${BOLD}EXAMPLES:${NC}"
+    echo "    claude-accounts add work"
+    echo "    claude-accounts add personal"
+    echo "    claude-accounts list"
+    echo "    claude-accounts use work"
+    echo "    claude-accounts remove personal"
+    echo ""
+    echo -e "${BOLD}SETUP:${NC}"
+    echo "    Add this line to your ~/.zshrc or ~/.bashrc:"
+    echo '        eval "$(claude-accounts shell-init)"'
+    echo ""
+    echo "    Then reload your shell:"
+    echo "        source ~/.zshrc"
+    echo ""
+    echo -e "${BOLD}VERSION:${NC}"
+    echo "    $VERSION"
+}
+
+# List all accounts
+list_accounts() {
+    local accounts
+    accounts=$(get_accounts)
+
+    if [[ -z "$accounts" ]]; then
+        echo -e "${YELLOW}No accounts configured.${NC}"
+        echo ""
+        echo "Create one with:"
+        echo "    claude-accounts add <name>"
+        return 0
+    fi
+
+    echo -e "${BOLD}Configured Claude accounts:${NC}"
+    echo ""
+
+    while IFS= read -r name; do
+        local dir="${CONFIG_DIR_PREFIX}${name}"
+        local status
+
+        if [[ -d "$dir" ]]; then
+            # Check if authenticated by looking for credentials
+            if [[ -f "$dir/.credentials.json" ]] || [[ -f "$dir/credentials.json" ]]; then
+                status="${GREEN}authenticated${NC}"
+            else
+                status="${YELLOW}not authenticated${NC}"
+            fi
+        else
+            status="${RED}directory missing${NC}"
+        fi
+
+        printf "  ${BLUE}%-20s${NC} %-30s (%b)\n" "$name" "$dir" "$status"
+    done <<< "$accounts"
+
+    echo ""
+    echo -e "Use ${BOLD}<name>${NC} or ${BOLD}claude-accounts use <name>${NC} to launch."
+}
+
+# Add a new account
+add_account() {
+    local name="${1:-}"
+
+    if [[ -z "$name" ]]; then
+        echo -e "${RED}Error:${NC} Account name required"
+        echo "Usage: claude-accounts add <name>"
+        exit 1
+    fi
+
+    validate_name "$name"
+
+    if account_exists "$name"; then
+        echo -e "${RED}Error:${NC} Account '$name' already exists"
+        exit 1
+    fi
+
+    local dir="${CONFIG_DIR_PREFIX}${name}"
+
+    if [[ -d "$dir" ]]; then
+        echo -e "${YELLOW}Warning:${NC} Directory $dir already exists"
+        read -rp "Register this existing directory as account '$name'? [y/N] " confirm
+        if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+            echo "Aborted."
+            exit 0
+        fi
+    else
+        mkdir -p "$dir"
+        echo -e "${GREEN}Created${NC} $dir"
+    fi
+
+    # Register the account
+    touch_config
+    echo "$name" >> "$CONFIG_FILE"
+
+    echo -e "${GREEN}Account '$name' added successfully!${NC}"
+    echo ""
+
+    # Print the alias so user can copy-paste or eval immediately
+    local alias_cmd="alias $name=\"CLAUDE_CONFIG_DIR='$dir' claude\""
+    echo "Run this to enable the alias now:"
+    echo "    $alias_cmd"
+    echo ""
+    echo "Then launch Claude:"
+    echo "    $name"
+}
+
+# Remove an account
+remove_account() {
+    local name="${1:-}"
+
+    if [[ -z "$name" ]]; then
+        echo -e "${RED}Error:${NC} Account name required"
+        echo "Usage: claude-accounts remove <name>"
+        exit 1
+    fi
+
+    if ! account_exists "$name"; then
+        echo -e "${RED}Error:${NC} Account '$name' not found"
+        echo "Run 'claude-accounts list' to see available accounts."
+        exit 1
+    fi
+
+    local dir="${CONFIG_DIR_PREFIX}${name}"
+
+    echo -e "${YELLOW}Warning:${NC} This will remove account '$name'"
+    if [[ -d "$dir" ]]; then
+        echo "  Directory: $dir (will be deleted)"
+    fi
+    echo ""
+    read -rp "Are you sure? [y/N] " confirm
+
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        echo "Aborted."
+        exit 0
+    fi
+
+    # Remove directory if it exists
+    if [[ -d "$dir" ]]; then
+        rm -rf "$dir"
+        echo -e "${GREEN}Removed${NC} $dir"
+    fi
+
+    # Remove from config (create temp file without the account)
+    local tmp_file
+    tmp_file=$(mktemp)
+    grep -vx "$name" "$CONFIG_FILE" > "$tmp_file" || true
+    mv "$tmp_file" "$CONFIG_FILE"
+
+    echo -e "${GREEN}Account '$name' removed successfully!${NC}"
+    echo ""
+    echo "Reload your shell to remove the alias:"
+    echo "    source ~/.zshrc"
+}
+
+# Use/launch an account
+use_account() {
+    local name="${1:-}"
+
+    if [[ -z "$name" ]]; then
+        echo -e "${RED}Error:${NC} Account name required"
+        echo "Usage: claude-accounts use <name>"
+        exit 1
+    fi
+
+    if ! account_exists "$name"; then
+        echo -e "${RED}Error:${NC} Account '$name' not found"
+        echo "Run 'claude-accounts list' to see available accounts."
+        exit 1
+    fi
+
+    local dir="${CONFIG_DIR_PREFIX}${name}"
+
+    if [[ ! -d "$dir" ]]; then
+        echo -e "${YELLOW}Warning:${NC} Creating missing directory $dir"
+        mkdir -p "$dir"
+    fi
+
+    echo -e "Launching Claude with account ${BLUE}$name${NC}..."
+    export CLAUDE_CONFIG_DIR="$dir"
+    exec claude "$@"
+}
+
+# Print shell initialization (aliases)
+shell_init() {
+    local accounts
+    accounts=$(get_accounts)
+
+    echo "# Claude Account Aliases (managed by claude-accounts)"
+    echo "# Generated by: claude-accounts shell-init"
+    echo ""
+
+    if [[ -z "$accounts" ]]; then
+        echo "# No accounts configured yet."
+        echo "# Run 'claude-accounts add <name>' to create one."
+        return 0
+    fi
+
+    while IFS= read -r name; do
+        local dir="${CONFIG_DIR_PREFIX}${name}"
+        echo "alias $name=\"CLAUDE_CONFIG_DIR='$dir' claude\""
+    done <<< "$accounts"
+}
+
+# Main command router
+main() {
+    local cmd="${1:-help}"
+    shift || true
+
+    case "$cmd" in
+        list|ls)
+            list_accounts
+            ;;
+        add|create|new)
+            add_account "$@"
+            ;;
+        remove|delete|rm)
+            remove_account "$@"
+            ;;
+        use|run|launch)
+            use_account "$@"
+            ;;
+        shell-init|init|aliases)
+            shell_init
+            ;;
+        version|-v|--version)
+            echo "claude-accounts $VERSION"
+            ;;
+        help|-h|--help)
+            usage
+            ;;
+        *)
+            echo -e "${RED}Error:${NC} Unknown command '$cmd'"
+            echo "Run 'claude-accounts help' for usage information."
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"
