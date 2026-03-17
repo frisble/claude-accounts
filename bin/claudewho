@@ -1,11 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
-VERSION="1.1.1"
-CONFIG_FILE="${CLAUDE_ACCOUNTS_CONFIG:-$HOME/.claude-accounts.conf}"
-CONFIG_DIR_PREFIX="$HOME/.claude-"
+VERSION="2.0.0"
+CONFIG_FILE="${CLAUDEWHO_CONFIG:-$HOME/.claudewho.conf}"
+CONFIG_DIR_PREFIX="$HOME/.claudewho-"
 WRAPPER_DIR="$HOME/.local/bin"
-CURRENT_ACCOUNT_FILE="$HOME/.claude-current-account"
+CURRENT_ACCOUNT_FILE="$HOME/.claudewho-current-account"
 
 # Colors (disabled if not a terminal)
 if [[ -t 1 ]]; then
@@ -78,7 +78,7 @@ check_path() {
 create_wrapper() {
     local name="$1"
     local dir="${CONFIG_DIR_PREFIX}${name}"
-    local wrapper_path="${WRAPPER_DIR}/claude-${name}"
+    local wrapper_path="${WRAPPER_DIR}/claudewho-${name}"
 
     # Ensure wrapper directory exists
     mkdir -p "$WRAPPER_DIR"
@@ -96,7 +96,7 @@ EOF
 # Remove wrapper script for an account
 remove_wrapper() {
     local name="$1"
-    local wrapper_path="${WRAPPER_DIR}/claude-${name}"
+    local wrapper_path="${WRAPPER_DIR}/claudewho-${name}"
 
     if [[ -f "$wrapper_path" ]]; then
         rm -f "$wrapper_path"
@@ -118,11 +118,11 @@ create_claude_wrapper() {
 
     cat > "$wrapper_path" << 'WRAPPER_EOF'
 #!/bin/bash
-# Claude wrapper - managed by claude-accounts
-# This wrapper allows switching accounts with: claude-accounts use <name>
+# Claude wrapper - managed by claudewho
+# This wrapper allows switching accounts with: claudewho use <name>
 
-CURRENT_ACCOUNT_FILE="$HOME/.claude-current-account"
-CONFIG_DIR_PREFIX="$HOME/.claude-"
+CURRENT_ACCOUNT_FILE="$HOME/.claudewho-current-account"
+CONFIG_DIR_PREFIX="$HOME/.claudewho-"
 WRAPPER_DIR="$HOME/.local/bin"
 
 # Find the real claude binary (skip our wrapper)
@@ -168,7 +168,7 @@ show_banner() {
 usage() {
     show_banner
     echo -e "${BOLD}USAGE:${NC}"
-    echo "    claude-accounts <command> [arguments]"
+    echo "    claudewho <command> [arguments]"
     echo ""
     echo -e "${BOLD}COMMANDS:${NC}"
     echo "    list                List all configured accounts"
@@ -180,17 +180,17 @@ usage() {
     echo "    help                Show this help message"
     echo ""
     echo -e "${BOLD}QUICK START:${NC}"
-    echo "    claude-accounts add work       # Creates 'work' account"
-    echo "    claude-work                    # Launch Claude with 'work' account"
-    echo "    claude-accounts use work       # Switch default account"
-    echo "    claude                         # Uses current account"
+    echo "    claudewho add work       # Creates 'work' account"
+    echo "    claudewho-work           # Launch Claude with 'work' account"
+    echo "    claudewho use work       # Switch default account"
+    echo "    claude                   # Uses current account"
     echo ""
     echo -e "${BOLD}EXAMPLES:${NC}"
-    echo "    claude-accounts add work"
-    echo "    claude-accounts add personal"
-    echo "    claude-accounts list"
-    echo "    claude-work"
-    echo "    claude-personal"
+    echo "    claudewho add work"
+    echo "    claudewho add personal"
+    echo "    claudewho list"
+    echo "    claudewho-work"
+    echo "    claudewho-personal"
     echo ""
     echo -e "${BOLD}VERSION:${NC}"
     echo "    $VERSION"
@@ -207,7 +207,7 @@ list_accounts() {
         echo -e "${YELLOW}No accounts configured.${NC}"
         echo ""
         echo "Create one with:"
-        echo "    claude-accounts add <name>"
+        echo "    claudewho add <name>"
         return 0
     fi
 
@@ -245,7 +245,7 @@ list_accounts() {
         echo -e "${GREEN}*${NC} = current account"
         echo ""
     fi
-    echo -e "Switch with ${BOLD}claude-accounts use <name>${NC}"
+    echo -e "Switch with ${BOLD}claudewho use <name>${NC}"
 }
 
 # Add a new account
@@ -254,7 +254,7 @@ add_account() {
 
     if [[ -z "$name" ]]; then
         echo -e "${RED}Error:${NC} Account name required"
-        echo "Usage: claude-accounts add <name>"
+        echo "Usage: claudewho add <name>"
         exit 1
     fi
 
@@ -285,7 +285,7 @@ add_account() {
 
     # Create wrapper script
     create_wrapper "$name"
-    echo -e "${GREEN}Created${NC} ${WRAPPER_DIR}/claude-${name}"
+    echo -e "${GREEN}Created${NC} ${WRAPPER_DIR}/claudewho-${name}"
 
     echo -e "${GREEN}Account '$name' added successfully!${NC}"
     echo ""
@@ -298,7 +298,7 @@ add_account() {
     fi
 
     echo "Launch Claude with this account:"
-    echo "    claude-${name}"
+    echo "    claudewho-${name}"
 }
 
 # Remove an account
@@ -307,13 +307,13 @@ remove_account() {
 
     if [[ -z "$name" ]]; then
         echo -e "${RED}Error:${NC} Account name required"
-        echo "Usage: claude-accounts remove <name>"
+        echo "Usage: claudewho remove <name>"
         exit 1
     fi
 
     if ! account_exists "$name"; then
         echo -e "${RED}Error:${NC} Account '$name' not found"
-        echo "Run 'claude-accounts list' to see available accounts."
+        echo "Run 'claudewho list' to see available accounts."
         exit 1
     fi
 
@@ -323,7 +323,7 @@ remove_account() {
     if [[ -d "$dir" ]]; then
         echo "  Directory: $dir (will be deleted)"
     fi
-    local wrapper_path="${WRAPPER_DIR}/claude-${name}"
+    local wrapper_path="${WRAPPER_DIR}/claudewho-${name}"
     if [[ -f "$wrapper_path" ]]; then
         echo "  Command: $wrapper_path (will be deleted)"
     fi
@@ -343,7 +343,7 @@ remove_account() {
 
     # Remove wrapper script
     remove_wrapper "$name"
-    echo -e "${GREEN}Removed${NC} ${WRAPPER_DIR}/claude-${name}"
+    echo -e "${GREEN}Removed${NC} ${WRAPPER_DIR}/claudewho-${name}"
 
     # Remove from config (create temp file without the account)
     local tmp_file
@@ -360,13 +360,13 @@ use_account() {
 
     if [[ -z "$name" ]]; then
         echo -e "${RED}Error:${NC} Account name required"
-        echo "Usage: claude-accounts use <name>"
+        echo "Usage: claudewho use <name>"
         exit 1
     fi
 
     if ! account_exists "$name"; then
         echo -e "${RED}Error:${NC} Account '$name' not found"
-        echo "Run 'claude-accounts list' to see available accounts."
+        echo "Run 'claudewho list' to see available accounts."
         exit 1
     fi
 
@@ -392,13 +392,13 @@ shell_init() {
     local accounts
     accounts=$(get_accounts)
 
-    echo "# Claude Account Aliases (managed by claude-accounts)"
-    echo "# Generated by: claude-accounts shell-init"
+    echo "# Claude Account Aliases (managed by claudewho)"
+    echo "# Generated by: claudewho shell-init"
     echo ""
 
     if [[ -z "$accounts" ]]; then
         echo "# No accounts configured yet."
-        echo "# Run 'claude-accounts add <name>' to create one."
+        echo "# Run 'claudewho add <name>' to create one."
         return 0
     fi
 
@@ -430,14 +430,14 @@ main() {
             shell_init
             ;;
         version|-v|--version)
-            echo "claude-accounts $VERSION"
+            echo "claudewho $VERSION"
             ;;
         help|-h|--help)
             usage
             ;;
         *)
             echo -e "${RED}Error:${NC} Unknown command '$cmd'"
-            echo "Run 'claude-accounts help' for usage information."
+            echo "Run 'claudewho help' for usage information."
             exit 1
             ;;
     esac

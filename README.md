@@ -1,4 +1,4 @@
-# claude-accounts
+# claudewho
 
 Manage multiple Claude Code account configurations easily. Switch between work and personal accounts, or maintain separate configurations for different projects.
 
@@ -7,23 +7,23 @@ Manage multiple Claude Code account configurations easily. Switch between work a
 ### Homebrew (recommended)
 
 ```bash
-brew install frisble/tap/claude-accounts
+brew install frisble/tap/claudewho
 ```
 
 Or:
 
 ```bash
 brew tap frisble/tap
-brew install claude-accounts
+brew install claudewho
 ```
 
 ### Manual
 
 ```bash
-git clone https://github.com/frisble/claude-accounts.git
-cd claude-accounts
-chmod +x bin/claude-accounts
-sudo ln -s "$(pwd)/bin/claude-accounts" /usr/local/bin/claude-accounts
+git clone https://github.com/frisble/claudewho.git
+cd claudewho
+chmod +x bin/claudewho
+sudo ln -s "$(pwd)/bin/claudewho" /usr/local/bin/claudewho
 ```
 
 ## Setup
@@ -31,7 +31,7 @@ sudo ln -s "$(pwd)/bin/claude-accounts" /usr/local/bin/claude-accounts
 Add this line to your `~/.zshrc` (or `~/.bashrc` for Bash):
 
 ```bash
-eval "$(claude-accounts shell-init)"
+eval "$(claudewho shell-init)"
 ```
 
 Then reload your shell:
@@ -45,26 +45,26 @@ source ~/.zshrc
 ### Create accounts
 
 ```bash
-claude-accounts add work
-claude-accounts add personal
-claude-accounts add client-project
+claudewho add work
+claudewho add personal
+claudewho add client-project
 ```
 
 ### List accounts
 
 ```bash
-claude-accounts list
+claudewho list
 ```
 
 Output:
 ```
 Configured Claude accounts:
 
-  work                 ~/.claude-work                 (authenticated)
-  personal             ~/.claude-personal             (not authenticated)
-  client-project       ~/.claude-client-project       (authenticated)
+  work                 ~/.claudewho-work              (authenticated)
+  personal             ~/.claudewho-personal          (not authenticated)
+  client-project       ~/.claudewho-client-project    (authenticated)
 
-Use claude-<name> or claude-accounts use <name> to launch.
+Use claudewho-<name> or claudewho use <name> to launch.
 ```
 
 ### Launch Claude with an account
@@ -73,17 +73,17 @@ After running `source ~/.zshrc`, you can use:
 
 ```bash
 # Using the alias (recommended)
-claude-work
-claude-personal
+claudewho-work
+claudewho-personal
 
 # Or using the command
-claude-accounts use work
+claudewho use work
 ```
 
 ### Remove an account
 
 ```bash
-claude-accounts remove personal
+claudewho remove personal
 ```
 
 This will prompt for confirmation before deleting the account directory.
@@ -100,11 +100,70 @@ This will prompt for confirmation before deleting the account directory.
 | `version` | Show version information |
 | `help` | Show help message |
 
+## Migrating from claude-accounts
+
+If you're upgrading from `claude-accounts` (v1.x), follow these steps:
+
+### 1. Uninstall the old version
+```bash
+brew uninstall claude-accounts
+```
+
+### 2. Install the new version
+```bash
+brew install frisble/tap/claudewho
+```
+
+### 3. Migrate your configuration
+
+**Option A: Manual setup (recommended for most users)**
+```bash
+# Simply recreate your accounts with the new tool
+claudewho add work
+claudewho add personal
+# ... then authenticate each account as usual
+```
+
+**Option B: Migrate existing directories**
+```bash
+# Rename config file
+mv ~/.claude-accounts.conf ~/.claudewho.conf
+
+# Migrate account directories
+mv ~/.claude-work ~/.claudewho-work
+mv ~/.claude-personal ~/.claudewho-personal
+# ... repeat for each account
+
+# Migrate current account marker
+mv ~/.claude-current-account ~/.claudewho-current-account
+
+# Recreate wrapper scripts
+claudewho shell-init
+source ~/.zshrc  # or ~/.bashrc
+```
+
+### 4. Update shell configuration
+Replace in your `~/.zshrc` or `~/.bashrc`:
+```bash
+# Old:
+eval "$(claude-accounts shell-init)"
+
+# New:
+eval "$(claudewho shell-init)"
+```
+
+### 5. Reload your shell
+```bash
+source ~/.zshrc
+```
+
+Your accounts will now be accessible as `claudewho-work`, `claudewho-personal`, etc.
+
 ## How it works
 
-- Each account is stored in `~/.claude-<name>/`
-- Account names are tracked in `~/.claude-accounts.conf`
-- The `shell-init` command generates aliases like `claude-work` that set `CLAUDE_CONFIG_DIR` before launching Claude
+- Each account is stored in `~/.claudewho-<name>/`
+- Account names are tracked in `~/.claudewho.conf`
+- The `shell-init` command generates aliases like `claudewho-work` that set `CLAUDE_CONFIG_DIR` before launching Claude
 - Your original `~/.claude` directory is never modified
 
 ## Requirements
