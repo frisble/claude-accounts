@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-VERSION="2.0.1"
+VERSION="2.0.2"
 CONFIG_FILE="${CLAUDEWHO_CONFIG:-$HOME/.claudewho.conf}"
 CONFIG_DIR_PREFIX="$HOME/.claudewho-"
 WRAPPER_DIR="$HOME/.local/bin"
@@ -127,16 +127,35 @@ WRAPPER_DIR="$HOME/.local/bin"
 
 # Find the real claude binary (skip our wrapper)
 find_real_claude() {
+    # First check known Claude installation locations
+    local versions_dir="$HOME/.local/share/claude/versions"
+    if [[ -d "$versions_dir" ]]; then
+        # Find the largest file (real binary, not wrapper scripts)
+        local real_binary
+        real_binary=$(find "$versions_dir" -type f -size +1M | sort -V | tail -1)
+        if [[ -n "$real_binary" && -x "$real_binary" ]]; then
+            echo "$real_binary"
+            return 0
+        fi
+    fi
+
+    # Fallback: search PATH for claude binary (skip wrapper directory)
     local IFS=':'
     for dir in $PATH; do
-        # Skip our wrapper directory
         [[ "$dir" == "$WRAPPER_DIR" ]] && continue
         if [[ -x "$dir/claude" ]]; then
             echo "$dir/claude"
             return 0
         fi
     done
-    echo "claude"  # fallback
+
+    # No real claude found - error instead of infinite loop
+    echo "Error: Could not find real Claude binary." >&2
+    echo "Expected locations:" >&2
+    echo "  - ~/.local/share/claude/versions/" >&2
+    echo "  - /usr/local/bin/claude" >&2
+    echo "  - /opt/homebrew/bin/claude" >&2
+    exit 1
 }
 
 # Check for current account
