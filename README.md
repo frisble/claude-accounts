@@ -44,6 +44,20 @@ claudewho add personal
 claudewho add client-project
 ```
 
+### Migrate settings from ~/.claude
+
+Copy your existing Claude Code configuration to a new account:
+
+```bash
+# During account creation
+claudewho add work --migrate
+
+# Or after creating an account
+claudewho migrate work
+```
+
+This copies your settings, skills, plugins, and project history. An interactive selector lets you choose which project groups to include. Running it again on the same account is safe — existing items are skipped.
+
 ### List accounts
 
 ```bash
@@ -86,6 +100,7 @@ This will prompt for confirmation before deleting the account directory.
 |---------|-------------|
 | `list` | List all configured accounts |
 | `add <name>` | Create a new account configuration |
+| `migrate <name>` | Migrate settings and projects from ~/.claude |
 | `remove <name>` | Remove an account (with confirmation) |
 | `use <name>` | Switch to the specified account |
 | `ide-setup` | Configure IDE integration (VSCode) |
