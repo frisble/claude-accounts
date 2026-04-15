@@ -384,6 +384,160 @@ find_common_prefix() {
     echo "$prefix"
 }
 
+# Interactive project group selector and copier
+# Args: $1 = source_dir (e.g. ~/.claude), $2 = target_dir (e.g. ~/.claudewho-work)
+select_and_copy_projects() {
+    local source_dir="$1"
+    local target_dir="$2"
+    local projects_dir="$source_dir/projects"
+
+    if [[ ! -d "$projects_dir" ]]; then
+        return 0
+    fi
+
+    # Collect all project directory names
+    local all_dirs=()
+    for d in "$projects_dir"/*/; do
+        [[ -d "$d" ]] || continue
+        all_dirs+=("$(basename "$d")")
+    done
+
+    if [[ ${#all_dirs[@]} -eq 0 ]]; then
+        return 0
+    fi
+
+    # Build group keys and counts
+    declare -A group_counts
+    for dirname in "${all_dirs[@]}"; do
+        local key
+        key=$(project_group_key "$dirname")
+        group_counts["$key"]=$(( ${group_counts["$key"]:-0} + 1 ))
+    done
+
+    # Sort group keys
+    local sorted_keys=()
+    while IFS= read -r key; do
+        sorted_keys+=("$key")
+    done < <(printf '%s\n' "${!group_counts[@]}" | sort)
+
+    # Find common prefix for shorter display
+    local common_prefix
+    common_prefix=$(printf '%s\n' "${sorted_keys[@]}" | find_common_prefix)
+
+    # Build display labels (strip common prefix)
+    local display_labels=()
+    for key in "${sorted_keys[@]}"; do
+        display_labels+=("${key#"$common_prefix"}")
+    done
+
+    # Selection state (0 = unselected, 1 = selected)
+    local selected=()
+    for (( i=0; i<${#sorted_keys[@]}; i++ )); do
+        selected+=(0)
+    done
+
+    local total=${#all_dirs[@]}
+
+    # Interactive loop
+    while true; do
+        echo ""
+        echo -e "${BOLD}Select project groups to migrate${NC} ($total projects in $projects_dir/):"
+        echo ""
+        for (( i=0; i<${#sorted_keys[@]}; i++ )); do
+            local check=" "
+            [[ "${selected[$i]}" -eq 1 ]] && check="x"
+            local count=${group_counts[${sorted_keys[$i]}]}
+            local label="${display_labels[$i]}"
+            local unit="projects"
+            [[ "$count" -eq 1 ]] && unit="project"
+            printf "  %2d. [%s] %s (%d %s)\n" "$((i+1))" "$check" "$label" "$count" "$unit"
+        done
+        echo ""
+        echo -e "Toggle: ${BOLD}1-${#sorted_keys[@]}${NC}, ${BOLD}a${NC}=all, ${BOLD}n${NC}=none, ${BOLD}enter${NC}=done"
+
+        read -rp "> " input
+
+        # Empty input = done
+        if [[ -z "$input" ]]; then
+            break
+        fi
+
+        # Handle special commands
+        case "$input" in
+            a|A)
+                for (( i=0; i<${#sorted_keys[@]}; i++ )); do
+                    selected[$i]=1
+                done
+                continue
+                ;;
+            n|N)
+                for (( i=0; i<${#sorted_keys[@]}; i++ )); do
+                    selected[$i]=0
+                done
+                continue
+                ;;
+        esac
+
+        # Handle comma-separated numbers and individual numbers
+        IFS=',' read -ra tokens <<< "$input"
+        for token in "${tokens[@]}"; do
+            # Trim whitespace
+            token=$(echo "$token" | tr -d ' ')
+            if [[ "$token" =~ ^[0-9]+$ ]] && [[ "$token" -ge 1 ]] && [[ "$token" -le ${#sorted_keys[@]} ]]; then
+                local idx=$((token - 1))
+                if [[ "${selected[$idx]}" -eq 0 ]]; then
+                    selected[$idx]=1
+                else
+                    selected[$idx]=0
+                fi
+            fi
+        done
+    done
+
+    # Collect selected group keys
+    local selected_keys=()
+    for (( i=0; i<${#sorted_keys[@]}; i++ )); do
+        if [[ "${selected[$i]}" -eq 1 ]]; then
+            selected_keys+=("${sorted_keys[$i]}")
+        fi
+    done
+
+    if [[ ${#selected_keys[@]} -eq 0 ]]; then
+        echo -e "  ${DIM}No project groups selected${NC}"
+        return 0
+    fi
+
+    # Copy matching projects
+    mkdir -p "$target_dir/projects"
+    local copied=0
+    local skipped=0
+    for dirname in "${all_dirs[@]}"; do
+        local key
+        key=$(project_group_key "$dirname")
+        local match="false"
+        for sel_key in "${selected_keys[@]}"; do
+            if [[ "$key" == "$sel_key" ]]; then
+                match="true"
+                break
+            fi
+        done
+        if [[ "$match" == "true" ]]; then
+            if [[ -d "$target_dir/projects/$dirname" ]]; then
+                ((skipped++))
+            else
+                cp -R "$projects_dir/$dirname" "$target_dir/projects/$dirname"
+                ((copied++))
+            fi
+        fi
+    done
+
+    if [[ $copied -gt 0 ]]; then
+        echo -e "  ${GREEN}Copied${NC} projects/ ($copied copied"$([[ $skipped -gt 0 ]] && echo ", $skipped skipped")")"
+    elif [[ $skipped -gt 0 ]]; then
+        echo -e "  ${YELLOW}Skipped${NC} projects/ ($skipped already exist)"
+    fi
+}
+
 # Migrate configuration from default .claude directory
 migrate_default_config() {
     local target_dir="$1"
