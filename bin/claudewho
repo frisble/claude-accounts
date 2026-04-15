@@ -551,34 +551,45 @@ migrate_default_config() {
     echo -e "${BOLD}Migrating from${NC} $source_dir..."
     echo ""
 
-    local migrated=0
-
-    # Configuration files
+    # Configuration files (skip existing)
     for file in CLAUDE.md settings.json settings.local.json; do
         if [[ -f "$source_dir/$file" ]]; then
-            cp "$source_dir/$file" "$target_dir/$file"
-            echo -e "  ${GREEN}Copied${NC} $file"
-            ((migrated++))
+            if [[ -f "$target_dir/$file" ]]; then
+                echo -e "  ${YELLOW}Skipped${NC} $file (already exists)"
+            else
+                cp "$source_dir/$file" "$target_dir/$file"
+                echo -e "  ${GREEN}Copied${NC} $file"
+            fi
         fi
     done
 
-    # Directories
-    for dir_name in skills plugins projects todos tasks; do
+    # Directories (copy contents, skip existing entries)
+    for dir_name in skills plugins todos tasks; do
         if [[ -d "$source_dir/$dir_name" ]]; then
-            cp -R "$source_dir/$dir_name" "$target_dir/$dir_name"
-            local count
-            count=$(find "$target_dir/$dir_name" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')
-            echo -e "  ${GREEN}Copied${NC} $dir_name/ ($count items)"
-            ((migrated++))
+            mkdir -p "$target_dir/$dir_name"
+            local copied=0
+            local skipped=0
+            for entry in "$source_dir/$dir_name"/*; do
+                [[ -e "$entry" ]] || continue
+                local entry_name
+                entry_name=$(basename "$entry")
+                if [[ -e "$target_dir/$dir_name/$entry_name" ]]; then
+                    ((skipped++))
+                else
+                    cp -R "$entry" "$target_dir/$dir_name/$entry_name"
+                    ((copied++))
+                fi
+            done
+            if [[ $copied -gt 0 ]]; then
+                echo -e "  ${GREEN}Copied${NC} $dir_name/ ($copied copied"$([[ $skipped -gt 0 ]] && echo ", $skipped skipped")")"
+            elif [[ $skipped -gt 0 ]]; then
+                echo -e "  ${YELLOW}Skipped${NC} $dir_name/ ($skipped already exist)"
+            fi
         fi
     done
 
-    echo ""
-    if [[ $migrated -gt 0 ]]; then
-        echo -e "${GREEN}Migrated $migrated items from default configuration.${NC}"
-    else
-        echo -e "${YELLOW}No configuration items found to migrate.${NC}"
-    fi
+    # Projects (interactive selection)
+    select_and_copy_projects "$source_dir" "$target_dir"
 }
 
 # Add a new account
