@@ -251,6 +251,7 @@ usage() {
     echo -e "${BOLD}COMMANDS:${NC}"
     echo "    list                List all configured accounts"
     echo "    add <name> [-m]     Create a new account configuration"
+    echo "    migrate <name>      Migrate settings and projects from ~/.claude"
     echo "    remove <name>       Remove an account (with confirmation)"
     echo "    use <name>          Switch to an account"
     echo "    ide-setup           Configure IDE integration (VSCode)"
@@ -258,8 +259,8 @@ usage() {
     echo "    version             Show version information"
     echo "    help                Show this help message"
     echo ""
-    echo -e "${BOLD}OPTIONS:${NC}"
-    echo "    -m, --migrate       Copy settings, skills, and project history from ~/.claude"
+    echo -e "${BOLD}OPTIONS (add):${NC}"
+    echo "    -m, --migrate       Also run migration after creating the account"
     echo ""
     echo -e "${BOLD}QUICK START:${NC}"
     echo "    claudewho add work       # Creates 'work' account"
@@ -879,6 +880,32 @@ shell_init() {
     done <<< "$accounts"
 }
 
+# Migrate configuration to an existing account
+migrate_account() {
+    local name="${1:-}"
+
+    if [[ -z "$name" ]]; then
+        echo -e "${RED}Error:${NC} Account name required"
+        echo "Usage: claudewho migrate <name>"
+        exit 1
+    fi
+
+    if ! account_exists "$name"; then
+        echo -e "${RED}Error:${NC} Account '$name' not found"
+        echo "Run 'claudewho list' to see available accounts."
+        exit 1
+    fi
+
+    local dir="${CONFIG_DIR_PREFIX}${name}"
+
+    if [[ ! -d "$dir" ]]; then
+        echo -e "${RED}Error:${NC} Account directory $dir is missing"
+        exit 1
+    fi
+
+    migrate_default_config "$dir"
+}
+
 # Main command router
 main() {
     local cmd="${1:-help}"
@@ -890,6 +917,9 @@ main() {
             ;;
         add|create|new)
             add_account "$@"
+            ;;
+        migrate)
+            migrate_account "$@"
             ;;
         remove|delete|rm)
             remove_account "$@"
