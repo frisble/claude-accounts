@@ -250,13 +250,16 @@ usage() {
     echo ""
     echo -e "${BOLD}COMMANDS:${NC}"
     echo "    list                List all configured accounts"
-    echo "    add <name>          Create a new account configuration"
+    echo "    add <name> [-m]     Create a new account configuration"
     echo "    remove <name>       Remove an account (with confirmation)"
     echo "    use <name>          Switch to an account"
     echo "    ide-setup           Configure IDE integration (VSCode)"
     echo "    shell-init          Print shell aliases (alternative to wrapper scripts)"
     echo "    version             Show version information"
     echo "    help                Show this help message"
+    echo ""
+    echo -e "${BOLD}OPTIONS:${NC}"
+    echo "    -m, --migrate       Copy settings, skills, and project history from ~/.claude"
     echo ""
     echo -e "${BOLD}QUICK START:${NC}"
     echo "    claudewho add work       # Creates 'work' account"
@@ -327,13 +330,136 @@ list_accounts() {
     echo -e "Switch with ${BOLD}claudewho use <name>${NC}"
 }
 
+# Convert a project directory name to a display-friendly path
+# e.g. "-Users-leolobato-Documents-Projetos-Cliq-Signos-foo" → "Documents/Projetos/Cliq/Signos/foo"
+project_display_path() {
+    local dirname="$1"
+    local path
+    path=$(echo "$dirname" | sed 's/^-/\//' | tr '-' '/')
+    # Strip home directory prefix
+    path="${path#"$HOME"/}"
+    echo "$path"
+}
+
+# Get the group key (first 4 path segments) for a project directory name
+project_group_key() {
+    local dirname="$1"
+    local display
+    display=$(project_display_path "$dirname")
+    echo "$display" | awk -F'/' '{
+        n = NF < 4 ? NF : 4
+        for (i = 1; i <= n; i++) {
+            if (i > 1) printf "/"
+            printf "%s", $i
+        }
+        print ""
+    }'
+}
+
+# Find the longest common directory prefix from lines on stdin
+find_common_prefix() {
+    local prefix=""
+    local first="true"
+    while IFS= read -r line; do
+        if [[ "$first" == "true" ]]; then
+            prefix="$line"
+            first="false"
+        else
+            # Narrow prefix character by character
+            local i=0
+            local len=${#prefix}
+            [[ ${#line} -lt $len ]] && len=${#line}
+            while [[ $i -lt $len ]] && [[ "${prefix:$i:1}" == "${line:$i:1}" ]]; do
+                ((i++))
+            done
+            prefix="${prefix:0:$i}"
+        fi
+    done
+    # Trim to last / boundary so we strip whole segments
+    if [[ "$prefix" == */* ]]; then
+        prefix="${prefix%/*}/"
+    else
+        prefix=""
+    fi
+    echo "$prefix"
+}
+
+# Migrate configuration from default .claude directory
+migrate_default_config() {
+    local target_dir="$1"
+    local source_dir="$HOME/.claude"
+
+    if [[ ! -d "$source_dir" ]]; then
+        echo -e "${YELLOW}Warning:${NC} Default Claude directory ($source_dir) not found. Skipping migration."
+        return 0
+    fi
+
+    echo -e "${BOLD}Migrating from${NC} $source_dir..."
+    echo ""
+
+    local migrated=0
+
+    # Configuration files
+    for file in CLAUDE.md settings.json settings.local.json; do
+        if [[ -f "$source_dir/$file" ]]; then
+            cp "$source_dir/$file" "$target_dir/$file"
+            echo -e "  ${GREEN}Copied${NC} $file"
+            ((migrated++))
+        fi
+    done
+
+    # Directories
+    for dir_name in skills plugins projects todos tasks; do
+        if [[ -d "$source_dir/$dir_name" ]]; then
+            cp -R "$source_dir/$dir_name" "$target_dir/$dir_name"
+            local count
+            count=$(find "$target_dir/$dir_name" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')
+            echo -e "  ${GREEN}Copied${NC} $dir_name/ ($count items)"
+            ((migrated++))
+        fi
+    done
+
+    echo ""
+    if [[ $migrated -gt 0 ]]; then
+        echo -e "${GREEN}Migrated $migrated items from default configuration.${NC}"
+    else
+        echo -e "${YELLOW}No configuration items found to migrate.${NC}"
+    fi
+}
+
 # Add a new account
 add_account() {
-    local name="${1:-}"
+    local name=""
+    local migrate="false"
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --migrate|-m)
+                migrate="true"
+                shift
+                ;;
+            -*)
+                echo -e "${RED}Error:${NC} Unknown option '$1'"
+                echo "Usage: claudewho add <name> [--migrate]"
+                exit 1
+                ;;
+            *)
+                if [[ -z "$name" ]]; then
+                    name="$1"
+                else
+                    echo -e "${RED}Error:${NC} Unexpected argument '$1'"
+                    echo "Usage: claudewho add <name> [--migrate]"
+                    exit 1
+                fi
+                shift
+                ;;
+        esac
+    done
 
     if [[ -z "$name" ]]; then
         echo -e "${RED}Error:${NC} Account name required"
-        echo "Usage: claudewho add <name>"
+        echo "Usage: claudewho add <name> [--migrate]"
         exit 1
     fi
 
@@ -379,6 +505,12 @@ add_account() {
 
     echo "Launch Claude with this account:"
     echo "    claudewho-${name}"
+
+    # Run migration if requested
+    if [[ "$migrate" == "true" ]]; then
+        echo ""
+        migrate_default_config "$dir"
+    fi
 }
 
 # Remove an account
