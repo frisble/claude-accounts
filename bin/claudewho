@@ -452,17 +452,15 @@ select_and_copy_projects() {
             printf "  %2d. [%s] %s (%d %s)\n" "$((i+1))" "$check" "$label" "$count" "$unit"
         done
         echo ""
-        echo -e "Toggle: ${BOLD}1-${#sorted_keys[@]}${NC}, ${BOLD}a${NC}=all, ${BOLD}n${NC}=none, ${BOLD}enter${NC}=done"
+        echo -e "Toggle: ${BOLD}1-${#sorted_keys[@]}${NC} (comma-separated), ${BOLD}a${NC}=all, ${BOLD}n${NC}=none, ${BOLD}d${NC}=done"
 
         read -rp "> " input
 
-        # Empty input = done
-        if [[ -z "$input" ]]; then
-            break
-        fi
-
         # Handle special commands
         case "$input" in
+            d|D)
+                break
+                ;;
             a|A)
                 for (( i=0; i<${#sorted_keys[@]}; i++ )); do
                     selected[$i]=1
@@ -473,6 +471,9 @@ select_and_copy_projects() {
                 for (( i=0; i<${#sorted_keys[@]}; i++ )); do
                     selected[$i]=0
                 done
+                continue
+                ;;
+            "")
                 continue
                 ;;
         esac
