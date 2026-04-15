@@ -672,10 +672,13 @@ add_account() {
     echo "Launch Claude with this account:"
     echo "    claudewho-${name}"
 
-    # Run migration if requested
+    # Run migration if requested, otherwise show tip
     if [[ "$migrate" == "true" ]]; then
         echo ""
         migrate_default_config "$dir"
+    else
+        echo ""
+        echo -e "${DIM}Tip: Run 'claudewho migrate ${name}' to copy settings and projects from ~/.claude${NC}"
     fi
 }
 
