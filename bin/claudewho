@@ -407,19 +407,17 @@ select_and_copy_projects() {
         return 0
     fi
 
-    # Build group keys and counts
-    declare -A group_counts
-    for dirname in "${all_dirs[@]}"; do
-        local key
-        key=$(project_group_key "$dirname")
-        group_counts["$key"]=$(( ${group_counts["$key"]:-0} + 1 ))
-    done
-
-    # Sort group keys
+    # Build sorted group keys with counts (parallel indexed arrays, Bash 3 compatible)
     local sorted_keys=()
-    while IFS= read -r key; do
+    local group_counts=()
+    while read -r count key; do
         sorted_keys+=("$key")
-    done < <(printf '%s\n' "${!group_counts[@]}" | sort)
+        group_counts+=("$count")
+    done < <(
+        for dirname in "${all_dirs[@]}"; do
+            project_group_key "$dirname"
+        done | sort | uniq -c | sed 's/^ *//'
+    )
 
     # Find common prefix for shorter display
     local common_prefix
@@ -447,7 +445,7 @@ select_and_copy_projects() {
         for (( i=0; i<${#sorted_keys[@]}; i++ )); do
             local check=" "
             [[ "${selected[$i]}" -eq 1 ]] && check="x"
-            local count=${group_counts[${sorted_keys[$i]}]}
+            local count=${group_counts[$i]}
             local label="${display_labels[$i]}"
             local unit="projects"
             [[ "$count" -eq 1 ]] && unit="project"
