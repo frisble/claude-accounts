@@ -1,14 +1,16 @@
 ```
-   ____ _        _   _   _ ____  _______        ___   _  ___
-  / ___| |      / \ | | | |  _ \| ____\ \      / / | | |/ _ \
- | |   | |     / _ \| | | | | | |  _|  \ \ /\ / /| |_| | | | |
- | |___| |___ / ___ \ |_| | |_| | |___  \ V  V / |  _  | |_| |
-  \____|_____/_/   \_\___/|____/|_____|  \_/\_/  |_| |_|\___/
+  ____ _        _   _   _ ____  _______        ___   _  ___
+ / ___| |      / \ | | | |  _ \| ____\ \      / / | | |/ _ \
+| |   | |     / _ \| | | | | | |  _|  \ \ /\ / /| |_| | | | |
+| |___| |___ / ___ \ |_| | |_| | |___  \ V  V / |  _  | |_| |
+ \____|_____/_/   \_\___/|____/|_____|  \_/\_/  |_| |_|\___/
 ```
 
 # claudewho
 
-Manage multiple Claude Code account configurations easily. Switch between work and personal accounts, or maintain separate configurations for different projects.
+Manage multiple Claude Code account configurations easily. Switch between work
+and personal accounts, or maintain separate configurations for different
+projects.
 
 ## Installation
 
@@ -56,7 +58,9 @@ claudewho add work --migrate
 claudewho migrate work
 ```
 
-This copies your settings, skills, plugins, and project history. An interactive selector lets you choose which project groups to include. Running it again on the same account is safe — existing items are skipped.
+This copies your settings, skills, plugins, and project history. An interactive
+selector lets you choose which project groups to include. Running it again on
+the same account is safe — existing items are skipped.
 
 ### List accounts
 
@@ -65,6 +69,7 @@ claudewho list
 ```
 
 Output:
+
 ```
 Configured Claude accounts:
 
@@ -96,21 +101,23 @@ This will prompt for confirmation before deleting the account directory.
 
 ## Commands
 
-| Command | Description |
-|---------|-------------|
-| `list` | List all configured accounts |
-| `add <name>` | Create a new account configuration |
+| Command          | Description                                  |
+| ---------------- | -------------------------------------------- |
+| `list`           | List all configured accounts                 |
+| `add <name>`     | Create a new account configuration           |
 | `migrate <name>` | Migrate settings and projects from ~/.claude |
-| `remove <name>` | Remove an account (with confirmation) |
-| `use <name>` | Switch to the specified account |
-| `ide-setup` | Configure IDE integration (VSCode) |
-| `shell-init` | Print shell aliases for sourcing |
-| `version` | Show version information |
-| `help` | Show help message |
+| `remove <name>`  | Remove an account (with confirmation)        |
+| `use <name>`     | Switch to the specified account              |
+| `ide-setup`      | Configure IDE integration (VSCode)           |
+| `shell-init`     | Print shell aliases for sourcing             |
+| `version`        | Show version information                     |
+| `help`           | Show help message                            |
 
 ## IDE Integration (VSCode)
 
-The Claude Code IDE extensions bundle their own CLI and don't respect `CLAUDE_CONFIG_DIR` by default. claudewho provides wrapper scripts that work with the extension's `claudeProcessWrapper` setting.
+The Claude Code IDE extensions bundle their own CLI and don't respect
+`CLAUDE_CONFIG_DIR` by default. claudewho provides wrapper scripts that work
+with the extension's `claudeProcessWrapper` setting.
 
 ### Setup
 
@@ -118,7 +125,8 @@ The Claude Code IDE extensions bundle their own CLI and don't respect `CLAUDE_CO
 claudewho ide-setup
 ```
 
-This creates the necessary wrapper scripts and prints configuration instructions.
+This creates the necessary wrapper scripts and prints configuration
+instructions.
 
 ### Option 1: Follow current account
 
@@ -127,7 +135,7 @@ All IDE windows share whichever account is active via `claudewho use <name>`.
 Add to your VSCode settings.json (`Cmd+Shift+P` > "Open Settings (JSON)"):
 
 ```json
-"claude-code.claudeProcessWrapper": "~/.local/bin/claudewho-ide"
+"claudeCode.claudeProcessWrapper": "~/.local/bin/claudewho-ide"
 ```
 
 ### Option 2: Per-workspace account (parallel)
@@ -156,7 +164,8 @@ claudewho ide-setup --account work
 
 - Each account is stored in `~/.claudewho-<name>/`
 - Account names are tracked in `~/.claudewho.conf`
-- Wrapper scripts like `claudewho-work` are created in `~/.local/bin/` and set `CLAUDE_CONFIG_DIR` before launching Claude
+- Wrapper scripts like `claudewho-work` are created in `~/.local/bin/` and set
+  `CLAUDE_CONFIG_DIR` before launching Claude
 - Your original `~/.claude` directory is never modified
 
 ## Requirements
@@ -169,7 +178,8 @@ claudewho ide-setup --account work
 
 - Each account requires a separate Anthropic account (different email)
 - Each account has its own usage limits
-- Check [Anthropic's terms of service](https://www.anthropic.com/terms) to ensure compliance
+- Check [Anthropic's terms of service](https://www.anthropic.com/terms) to
+  ensure compliance
 
 ## License
 
