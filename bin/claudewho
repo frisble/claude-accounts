@@ -250,13 +250,17 @@ usage() {
     echo ""
     echo -e "${BOLD}COMMANDS:${NC}"
     echo "    list                List all configured accounts"
-    echo "    add <name>          Create a new account configuration"
+    echo "    add <name> [-m]     Create a new account configuration"
+    echo "    migrate <name>      Migrate settings and projects from ~/.claude"
     echo "    remove <name>       Remove an account (with confirmation)"
     echo "    use <name>          Switch to an account"
     echo "    ide-setup           Configure IDE integration (VSCode)"
     echo "    shell-init          Print shell aliases (alternative to wrapper scripts)"
     echo "    version             Show version information"
     echo "    help                Show this help message"
+    echo ""
+    echo -e "${BOLD}OPTIONS (add):${NC}"
+    echo "    -m, --migrate       Also run migration after creating the account"
     echo ""
     echo -e "${BOLD}QUICK START:${NC}"
     echo "    claudewho add work       # Creates 'work' account"
@@ -327,13 +331,300 @@ list_accounts() {
     echo -e "Switch with ${BOLD}claudewho use <name>${NC}"
 }
 
+# Convert a project directory name to a display-friendly path
+# e.g. "-Users-leolobato-Documents-Projetos-Cliq-Signos-foo" → "Documents/Projetos/Cliq/Signos/foo"
+project_display_path() {
+    local dirname="$1"
+    local path
+    path=$(echo "$dirname" | sed 's/^-/\//' | tr '-' '/')
+    # Strip home directory prefix
+    path="${path#"$HOME"/}"
+    echo "$path"
+}
+
+# Get the group key (first 4 path segments) for a project directory name
+project_group_key() {
+    local dirname="$1"
+    local display
+    display=$(project_display_path "$dirname")
+    echo "$display" | awk -F'/' '{
+        n = NF < 4 ? NF : 4
+        for (i = 1; i <= n; i++) {
+            if (i > 1) printf "/"
+            printf "%s", $i
+        }
+        print ""
+    }'
+}
+
+# Find the longest common directory prefix from lines on stdin
+find_common_prefix() {
+    local prefix=""
+    local first="true"
+    while IFS= read -r line; do
+        if [[ "$first" == "true" ]]; then
+            prefix="$line"
+            first="false"
+        else
+            # Narrow prefix character by character
+            local i=0
+            local len=${#prefix}
+            [[ ${#line} -lt $len ]] && len=${#line}
+            while [[ $i -lt $len ]] && [[ "${prefix:$i:1}" == "${line:$i:1}" ]]; do
+                ((i++))
+            done
+            prefix="${prefix:0:$i}"
+        fi
+    done
+    # Trim to last / boundary so we strip whole segments
+    if [[ "$prefix" == */* ]]; then
+        prefix="${prefix%/*}/"
+    else
+        prefix=""
+    fi
+    echo "$prefix"
+}
+
+# Interactive project group selector and copier
+# Args: $1 = source_dir (e.g. ~/.claude), $2 = target_dir (e.g. ~/.claudewho-work)
+select_and_copy_projects() {
+    local source_dir="$1"
+    local target_dir="$2"
+    local projects_dir="$source_dir/projects"
+
+    if [[ ! -d "$projects_dir" ]]; then
+        return 0
+    fi
+
+    # Collect all project directory names
+    local all_dirs=()
+    for d in "$projects_dir"/*/; do
+        [[ -d "$d" ]] || continue
+        all_dirs+=("$(basename "$d")")
+    done
+
+    if [[ ${#all_dirs[@]} -eq 0 ]]; then
+        return 0
+    fi
+
+    # Build sorted group keys with counts (parallel indexed arrays, Bash 3 compatible)
+    local sorted_keys=()
+    local group_counts=()
+    while read -r count key; do
+        sorted_keys+=("$key")
+        group_counts+=("$count")
+    done < <(
+        for dirname in "${all_dirs[@]}"; do
+            project_group_key "$dirname"
+        done | sort | uniq -c | sed 's/^ *//'
+    )
+
+    # Find common prefix for shorter display
+    local common_prefix
+    common_prefix=$(printf '%s\n' "${sorted_keys[@]}" | find_common_prefix)
+
+    # Build display labels (strip common prefix)
+    local display_labels=()
+    for key in "${sorted_keys[@]}"; do
+        display_labels+=("${key#"$common_prefix"}")
+    done
+
+    # Selection state (0 = unselected, 1 = selected)
+    local selected=()
+    for (( i=0; i<${#sorted_keys[@]}; i++ )); do
+        selected+=(0)
+    done
+
+    local total=${#all_dirs[@]}
+
+    # Interactive loop
+    while true; do
+        echo ""
+        echo -e "${BOLD}Select project groups to migrate${NC} ($total projects in $projects_dir/):"
+        echo ""
+        for (( i=0; i<${#sorted_keys[@]}; i++ )); do
+            local check=" "
+            [[ "${selected[$i]}" -eq 1 ]] && check="x"
+            local count=${group_counts[$i]}
+            local label="${display_labels[$i]}"
+            local unit="projects"
+            [[ "$count" -eq 1 ]] && unit="project"
+            printf "  %2d. [%s] %s (%d %s)\n" "$((i+1))" "$check" "$label" "$count" "$unit"
+        done
+        echo ""
+        echo -e "Toggle: ${BOLD}1-${#sorted_keys[@]}${NC} (comma-separated), ${BOLD}a${NC}=all, ${BOLD}n${NC}=none, ${BOLD}d${NC}=done"
+
+        read -rp "> " input
+
+        # Handle special commands
+        case "$input" in
+            d|D)
+                break
+                ;;
+            a|A)
+                for (( i=0; i<${#sorted_keys[@]}; i++ )); do
+                    selected[$i]=1
+                done
+                continue
+                ;;
+            n|N)
+                for (( i=0; i<${#sorted_keys[@]}; i++ )); do
+                    selected[$i]=0
+                done
+                continue
+                ;;
+            "")
+                continue
+                ;;
+        esac
+
+        # Handle comma-separated numbers and individual numbers
+        IFS=',' read -ra tokens <<< "$input"
+        for token in "${tokens[@]}"; do
+            # Trim whitespace
+            token=$(echo "$token" | tr -d ' ')
+            if [[ "$token" =~ ^[0-9]+$ ]] && [[ "$token" -ge 1 ]] && [[ "$token" -le ${#sorted_keys[@]} ]]; then
+                local idx=$((token - 1))
+                if [[ "${selected[$idx]}" -eq 0 ]]; then
+                    selected[$idx]=1
+                else
+                    selected[$idx]=0
+                fi
+            fi
+        done
+    done
+
+    # Collect selected group keys
+    local selected_keys=()
+    for (( i=0; i<${#sorted_keys[@]}; i++ )); do
+        if [[ "${selected[$i]}" -eq 1 ]]; then
+            selected_keys+=("${sorted_keys[$i]}")
+        fi
+    done
+
+    if [[ ${#selected_keys[@]} -eq 0 ]]; then
+        echo -e "  ${DIM}No project groups selected${NC}"
+        return 0
+    fi
+
+    # Copy matching projects
+    mkdir -p "$target_dir/projects"
+    local copied=0
+    local skipped=0
+    for dirname in "${all_dirs[@]}"; do
+        local key
+        key=$(project_group_key "$dirname")
+        local match="false"
+        for sel_key in "${selected_keys[@]}"; do
+            if [[ "$key" == "$sel_key" ]]; then
+                match="true"
+                break
+            fi
+        done
+        if [[ "$match" == "true" ]]; then
+            if [[ -d "$target_dir/projects/$dirname" ]]; then
+                ((skipped++))
+            else
+                cp -R "$projects_dir/$dirname" "$target_dir/projects/$dirname"
+                ((copied++))
+            fi
+        fi
+    done
+
+    if [[ $copied -gt 0 ]]; then
+        echo -e "  ${GREEN}Copied${NC} projects/ ($copied copied"$([[ $skipped -gt 0 ]] && echo ", $skipped skipped")")"
+    elif [[ $skipped -gt 0 ]]; then
+        echo -e "  ${YELLOW}Skipped${NC} projects/ ($skipped already exist)"
+    fi
+}
+
+# Migrate configuration from default .claude directory
+migrate_default_config() {
+    local target_dir="$1"
+    local source_dir="$HOME/.claude"
+
+    if [[ ! -d "$source_dir" ]]; then
+        echo -e "${YELLOW}Warning:${NC} Default Claude directory ($source_dir) not found. Skipping migration."
+        return 0
+    fi
+
+    echo -e "${BOLD}Migrating from${NC} $source_dir..."
+    echo ""
+
+    # Configuration files (skip existing)
+    for file in CLAUDE.md settings.json settings.local.json; do
+        if [[ -f "$source_dir/$file" ]]; then
+            if [[ -f "$target_dir/$file" ]]; then
+                echo -e "  ${YELLOW}Skipped${NC} $file (already exists)"
+            else
+                cp "$source_dir/$file" "$target_dir/$file"
+                echo -e "  ${GREEN}Copied${NC} $file"
+            fi
+        fi
+    done
+
+    # Directories (copy contents, skip existing entries)
+    for dir_name in skills plugins todos tasks; do
+        if [[ -d "$source_dir/$dir_name" ]]; then
+            mkdir -p "$target_dir/$dir_name"
+            local copied=0
+            local skipped=0
+            for entry in "$source_dir/$dir_name"/*; do
+                [[ -e "$entry" ]] || continue
+                local entry_name
+                entry_name=$(basename "$entry")
+                if [[ -e "$target_dir/$dir_name/$entry_name" ]]; then
+                    ((skipped++))
+                else
+                    cp -R "$entry" "$target_dir/$dir_name/$entry_name"
+                    ((copied++))
+                fi
+            done
+            if [[ $copied -gt 0 ]]; then
+                echo -e "  ${GREEN}Copied${NC} $dir_name/ ($copied copied"$([[ $skipped -gt 0 ]] && echo ", $skipped skipped")")"
+            elif [[ $skipped -gt 0 ]]; then
+                echo -e "  ${YELLOW}Skipped${NC} $dir_name/ ($skipped already exist)"
+            fi
+        fi
+    done
+
+    # Projects (interactive selection)
+    select_and_copy_projects "$source_dir" "$target_dir"
+}
+
 # Add a new account
 add_account() {
-    local name="${1:-}"
+    local name=""
+    local migrate="false"
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --migrate|-m)
+                migrate="true"
+                shift
+                ;;
+            -*)
+                echo -e "${RED}Error:${NC} Unknown option '$1'"
+                echo "Usage: claudewho add <name> [--migrate]"
+                exit 1
+                ;;
+            *)
+                if [[ -z "$name" ]]; then
+                    name="$1"
+                else
+                    echo -e "${RED}Error:${NC} Unexpected argument '$1'"
+                    echo "Usage: claudewho add <name> [--migrate]"
+                    exit 1
+                fi
+                shift
+                ;;
+        esac
+    done
 
     if [[ -z "$name" ]]; then
         echo -e "${RED}Error:${NC} Account name required"
-        echo "Usage: claudewho add <name>"
+        echo "Usage: claudewho add <name> [--migrate]"
         exit 1
     fi
 
@@ -379,6 +670,15 @@ add_account() {
 
     echo "Launch Claude with this account:"
     echo "    claudewho-${name}"
+
+    # Run migration if requested, otherwise show tip
+    if [[ "$migrate" == "true" ]]; then
+        echo ""
+        migrate_default_config "$dir"
+    else
+        echo ""
+        echo -e "${DIM}Tip: Run 'claudewho migrate ${name}' to copy settings and projects from ~/.claude${NC}"
+    fi
 }
 
 # Remove an account
@@ -582,6 +882,32 @@ shell_init() {
     done <<< "$accounts"
 }
 
+# Migrate configuration to an existing account
+migrate_account() {
+    local name="${1:-}"
+
+    if [[ -z "$name" ]]; then
+        echo -e "${RED}Error:${NC} Account name required"
+        echo "Usage: claudewho migrate <name>"
+        exit 1
+    fi
+
+    if ! account_exists "$name"; then
+        echo -e "${RED}Error:${NC} Account '$name' not found"
+        echo "Run 'claudewho list' to see available accounts."
+        exit 1
+    fi
+
+    local dir="${CONFIG_DIR_PREFIX}${name}"
+
+    if [[ ! -d "$dir" ]]; then
+        echo -e "${RED}Error:${NC} Account directory $dir is missing"
+        exit 1
+    fi
+
+    migrate_default_config "$dir"
+}
+
 # Main command router
 main() {
     local cmd="${1:-help}"
@@ -593,6 +919,9 @@ main() {
             ;;
         add|create|new)
             add_account "$@"
+            ;;
+        migrate)
+            migrate_account "$@"
             ;;
         remove|delete|rm)
             remove_account "$@"
