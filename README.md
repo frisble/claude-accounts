@@ -62,6 +62,11 @@ This copies your settings, skills, plugins, and project history. An interactive
 selector lets you choose which project groups to include. Running it again on
 the same account is safe — existing items are skipped.
 
+Plugin metadata stores absolute paths (e.g. `~/.claude/plugins/...`), so
+migration rewrites those to point at the account directory. Without this,
+plugin installs fail with "Source path does not exist". Re-running `migrate`
+also repairs an account whose plugin paths were left pointing at `~/.claude`.
+
 ### List accounts
 
 ```bash

@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-VERSION="2.2.0"
+VERSION="2.2.1"
 CONFIG_FILE="${CLAUDEWHO_CONFIG:-$HOME/.claudewho.conf}"
 CONFIG_DIR_PREFIX="$HOME/.claudewho-"
 WRAPPER_DIR="$HOME/.local/bin"
@@ -538,6 +538,40 @@ select_and_copy_projects() {
     fi
 }
 
+# Rewrite absolute source paths inside copied plugin configs.
+# Plugin metadata (known_marketplaces.json, installed_plugins.json) stores
+# absolute installLocation/installPath values pointing at the source (~/.claude).
+# Without rewriting them, plugin installs and updates fail with
+# "Source path does not exist" because the account uses a different directory.
+# Safe to run repeatedly — it also heals configs copied by an older migration.
+rewrite_plugin_paths() {
+    local source_dir="$1"
+    local target_dir="$2"
+    local plugins_dir="$target_dir/plugins"
+
+    [[ -d "$plugins_dir" ]] || return 0
+
+    # Escape literal dots so the source path isn't treated as a regex wildcard.
+    # Trailing slash ensures "~/.claude/" never matches "~/.claudewho-<name>/".
+    local src_pat="${source_dir//./\\.}/"
+
+    local rewrote=0
+    for json in known_marketplaces.json installed_plugins.json config.json; do
+        local file="$plugins_dir/$json"
+        [[ -f "$file" ]] || continue
+        if grep -q "${source_dir}/" "$file" 2>/dev/null; then
+            local tmp
+            tmp=$(mktemp)
+            sed "s#${src_pat}#${target_dir}/#g" "$file" > "$tmp" && mv "$tmp" "$file"
+            ((rewrote++))
+        fi
+    done
+
+    if [[ $rewrote -gt 0 ]]; then
+        echo -e "  ${GREEN}Rewrote${NC} plugin paths in $rewrote config file(s)"
+    fi
+}
+
 # Migrate configuration from default .claude directory
 migrate_default_config() {
     local target_dir="$1"
@@ -587,6 +621,10 @@ migrate_default_config() {
             fi
         fi
     done
+
+    # Fix absolute paths baked into the copied plugin configs so plugin
+    # install/update works against the account directory instead of ~/.claude.
+    rewrite_plugin_paths "$source_dir" "$target_dir"
 
     # Projects (interactive selection)
     select_and_copy_projects "$source_dir" "$target_dir"
